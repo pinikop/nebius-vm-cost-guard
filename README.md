@@ -29,7 +29,7 @@ sudo chmod 644 /var/log/cost-guard.log
 
 4. Add cron job
 ```bash
-(sudo crontab -l 2>/dev/null; echo "*/5 * * * * /opt/cost-guard/idle-guard.sh") | sudo crontab -
+(sudo crontab -l 2>/dev/null; echo "*/1 * * * * /opt/cost-guard/idle-guard.sh") | sudo crontab -
 ```
 
 5. Test it
