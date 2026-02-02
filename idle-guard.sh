@@ -7,13 +7,14 @@ set -euo pipefail
 # Ensure PATH is set for cron
 export PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.nebius/bin"
 
-# CONFIGS
-INSTANCE_ID="$(hostname)"    # or actual instance ID if different
-CPU_THRESHOLD=10             # CPU % below which VM is "idle"
-IDLE_THRESHOLD_SECONDS=1800  # 30 minutes
-MIN_UPTIME_SECONDS=600       # 10 minutes
-LOG_FILE="/var/log/cost-guard.log"
-STATE_FILE="/var/run/cost-guard/idle_since"
+# Load configuration
+CONFIG_FILE="$(dirname "$0")/config.env"
+if [[ ! -f "$CONFIG_FILE" ]]; then
+    echo "ERROR: Configuration file not found: $CONFIG_FILE"
+    exit 1
+fi
+source "$CONFIG_FILE"
+
 STATE_DIR=$(dirname "$STATE_FILE")
 
 # Create state directory if it doesn't exist
