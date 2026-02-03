@@ -46,6 +46,11 @@ get_uptime_seconds() {
 main() {
     log "INFO" "--- Cost Guard check starting ---"
     
+    if [[ "${ENABLED:-false}" != "true" ]]; then
+        log "INFO" "Cost Guard is disabled."
+        exit 0
+    fi
+    
     local uptime=$(get_uptime_seconds)
     if [[ $uptime -lt $MIN_UPTIME_SECONDS ]]; then
         log "INFO" "Uptime ($uptime s) < Min ($MIN_UPTIME_SECONDS s). Skipping."
