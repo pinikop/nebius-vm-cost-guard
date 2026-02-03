@@ -130,3 +130,4 @@ Edit `config.env` to customize:
 | `MIN_UPTIME_SECONDS` | `600` | Min uptime before allowing shutdown (10 min) |
 | `LOG_FILE` | `/var/log/cost-guard.log` | Log file location |
 | `STATE_FILE` | `/var/run/cost-guard/idle_since` | State tracking file |
+| `ENABLED` | `true` | Set to `false` to disable without removing cron job |
