@@ -36,6 +36,8 @@ get_cpu_usage() {
     awk -v l="$lavg" -v c="$cpus" 'BEGIN {printf "%.0f", (l / c) * 100}'
 }
 
+# TODO: Add GPU monitoring support
+
 # Get system uptime in seconds
 get_uptime_seconds() {
     awk '{print int($1)}' /proc/uptime
