@@ -2,41 +2,65 @@
 
 Automatically shuts down idle Nebius VMs to save costs.
 
+## How It Works
+
+Cost Guard monitors your Nebius VM's CPU usage via cron and automatically stops the instance when idle:
+
+1. Cron runs the script every minute
+2. Script checks 5-minute CPU load average (not instant - avoids false positives)
+3. If CPU is below threshold, tracks idle duration
+4. When idle time exceeds threshold, sends stop command via Nebius CLI
+5. VM shuts down and you stop paying
+
+## Prerequisites
+
+1. **Service account** with permissions to stop compute instances
+   - Create service account in Nebius Console: [Service Account Guide](https://docs.nebius.com/iam/service-accounts/manage)
+   - Add to a group with editor/admin permissions (or grant `compute.instances.update` permission)
+
+2. **Nebius VM** created with the service account attached: [Compute Documentation](https://docs.nebius.com/compute)
+   - Service account must be attached during VM creation
+   - Cannot be added to existing VM
+
 ## Installation
 
-1. Clone the repository
-```bash
-git clone https://github.com/pinikop/nebius-vm-cost-guard.git
-cd nebius-vm-cost-guard
-```
+1. Start your Nebius VM (via Nebius Console or Nebius CLI) and ssh into it
 
-2. Configure settings (optional)
-```bash
-nano config.env
-```
+2. Clone the repository
+   ```bash
+   git clone https://github.com/pinikop/nebius-vm-cost-guard.git
+   cd nebius-vm-cost-guard
+   ```
 
-Customize thresholds, instance ID, and paths as needed.
+3. Configure settings (optional)
+   ```bash
+   nano config.env
+   ```
+   
+   Customize thresholds, instance ID, and paths as needed.
 
-3. Copy files to system directory
-```bash
-sudo mkdir -p /opt/cost-guard
-sudo cp config.env idle-guard.sh /opt/cost-guard/
-sudo chmod +x /opt/cost-guard/idle-guard.sh
+4. Copy files to system directory
+   ```bash
+   sudo mkdir -p /opt/cost-guard
+   sudo cp config.env idle-guard.sh /opt/cost-guard/
+   sudo chmod +x /opt/cost-guard/idle-guard.sh
 
-sudo touch /var/log/cost-guard.log
-sudo chmod 644 /var/log/cost-guard.log
-```
+   sudo touch /var/log/cost-guard.log
+   sudo chmod 644 /var/log/cost-guard.log
+   ```
+   
+   **Note:** If you changed `LOG_FILE` or `STATE_FILE` paths in step 3, adjust the paths accordingly. The state directory is created automatically by the script.
 
-4. Add cron job
-```bash
-(sudo crontab -l 2>/dev/null; echo "*/1 * * * * /opt/cost-guard/idle-guard.sh") | sudo crontab -
-```
+5. Add cron job
+   ```bash
+   (sudo crontab -l 2>/dev/null; echo "*/1 * * * * /opt/cost-guard/idle-guard.sh") | sudo crontab -
+   ```
 
-5. Test it
-```bash
-sudo /opt/cost-guard/idle-guard.sh
-tail -5 /var/log/cost-guard.log
-```
+6. Test it
+   ```bash
+   sudo /opt/cost-guard/idle-guard.sh
+   tail -5 /var/log/cost-guard.log
+   ```
 
 ## Configuration
 

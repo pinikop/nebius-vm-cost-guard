@@ -1,0 +1,10 @@
+# Logs
+*.log
+
+# State files
+idle_since
+
+# Editor files
+.vscode/
+.idea/
+*.swp
