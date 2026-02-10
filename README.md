@@ -9,7 +9,7 @@ Automatically shuts down idle Nebius VMs to save costs.
 
 Cost Guard monitors your Nebius VM's CPU usage via cron and automatically stops the instance when idle:
 
-1. Cron runs the script every minute
+1. Cron runs the script every 5 minutes
 2. Script checks 5-minute CPU load average (not instant - avoids false positives)
 3. If CPU is below threshold, tracks idle duration
 4. When idle time exceeds threshold, sends stop command via Nebius CLI
