@@ -12,7 +12,7 @@ Cost Guard monitors your Nebius VM's CPU usage via cron and automatically stops 
 1. Cron runs the script every 5 minutes
 2. Script checks 5-minute CPU load average (not instant - avoids false positives)
 3. If CPU is below threshold, tracks idle duration
-4. When idle time exceeds threshold, sends stop command via Nebius CLI
+4. When idle time exceeds threshold, runs `nebius compute instance stop` via the Nebius CLI
 5. VM shuts down and you stop paying
 
 ## Prerequisites
@@ -21,9 +21,10 @@ Cost Guard monitors your Nebius VM's CPU usage via cron and automatically stops 
    - Create service account in Nebius Console: [Service Account Guide](https://docs.nebius.com/iam/service-accounts/manage)
    - Add to a group with editor/admin permissions (or grant `compute.instances.update` permission)
 
-2. **Nebius VM** created with the service account attached: [Compute Documentation](https://docs.nebius.com/compute)
-   - Service account must be attached during VM creation
-   - Cannot be added to existing VM
+2. **Nebius VM** with the service account attached: [Compute Documentation](https://docs.nebius.com/compute)
+   - Preferred: attach the service account at VM creation (`--service-account-id`). The preinstalled Nebius CLI then authenticates automatically with the token at `/mnt/cloud-metadata/token`.
+   - Existing VM without one: create a CLI profile for the service account using an authorized key. See [Nebius CLI on a VM](https://docs.nebius.com/cli/compute-vm).
+   - Tested with Nebius CLI `0.12.287` (check with `nebius version`). The script logs a warning if the installed version differs.
 
 ## Installation
 
