@@ -22,6 +22,8 @@ cat "$GPU_OUTPUT"
 EOF
     chmod +x "$TEST_DIR/bin/"*
 
+    unset NVIDIA_SMI GPU_MONITORING GPU_THRESHOLD GPU_SAMPLES GPU_SAMPLE_INTERVAL \
+        GPU_MEMORY_THRESHOLD_MB GPU_MEM_IDLE_THRESHOLD_SECONDS
     write_config
     echo 1 > "$TEST_DIR/state/idle_since"
     export PATH="$TEST_DIR/bin:$PATH"
@@ -43,8 +45,8 @@ STATE_FILE="$TEST_DIR/state/idle_since"
 ENABLED="true"
 GPU_SAMPLES=2
 GPU_SAMPLE_INTERVAL=0
-$*
 EOF
+    printf '%s\n' "$@" >> "$TEST_DIR/app/config.env"
 }
 
 set_gpu() {
