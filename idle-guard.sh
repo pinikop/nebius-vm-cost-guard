@@ -47,7 +47,49 @@ get_cpu_usage() {
     awk -v l="$lavg" -v c="$cpus" 'BEGIN {printf "%.0f", (l / c) * 100}'
 }
 
-# TODO: Add GPU monitoring support
+# GPU checks run when GPU_MONITORING is on, or auto with nvidia-smi present.
+# Unknown values act like "on" so a typo can never cause a shutdown.
+gpu_monitoring_enabled() {
+    case "$GPU_MONITORING" in
+        off) return 1 ;;
+        auto) command -v "$NVIDIA_SMI" > /dev/null ;;
+        *) return 0 ;;
+    esac
+}
+
+# Sample all GPUs GPU_SAMPLES times. Prints "<max_util_pct> <max_mem_mb>".
+# Returns non-zero on any nvidia-smi failure or unparsable output.
+get_gpu_usage() {
+    [[ "$GPU_SAMPLES" =~ ^[1-9][0-9]*$ ]] || return 1
+    local max_util=0 max_mem=0 sample out util mem
+    for ((sample = 1; sample <= GPU_SAMPLES; sample++)); do
+        out=$(timeout 10 "$NVIDIA_SMI" \
+            --query-gpu=utilization.gpu,memory.used \
+            --format=csv,noheader,nounits 2>/dev/null) || return 1
+        [[ -n "$out" ]] || return 1
+        while IFS=', ' read -r util mem; do
+            [[ "$util" =~ ^[0-9]+$ && "$mem" =~ ^[0-9]+$ ]] || return 1
+            if ((util > max_util)); then max_util=$util; fi
+            if ((mem > max_mem)); then max_mem=$mem; fi
+        done <<< "$out"
+        if ((sample < GPU_SAMPLES)); then sleep "$GPU_SAMPLE_INTERVAL"; fi
+    done
+    echo "$max_util $max_mem"
+}
+
+# Returns 0 if the GPU is idle, 1 if active or the check failed (fail-safe).
+# Sets GPU_SUMMARY for the log line.
+is_gpu_idle() {
+    local usage util mem
+    if ! usage=$(get_gpu_usage); then
+        GPU_SUMMARY="check failed, treated as active"
+        log "ERROR" "GPU check failed. Treating GPU as active."
+        return 1
+    fi
+    read -r util mem <<< "$usage"
+    GPU_SUMMARY="${util}% (max of ${GPU_SAMPLES} samples, Threshold: ${GPU_THRESHOLD}%, memory: ${mem}MB)"
+    ((util < GPU_THRESHOLD))
+}
 
 # Log an error if the Nebius CLI is missing, a warning if its version differs from the tested one
 check_nebius_cli() {
@@ -82,10 +124,24 @@ main() {
         exit 0
     fi
     
-    local cpu_usage=$(get_cpu_usage)
-    log "INFO" "CPU usage (5-min avg): ${cpu_usage}% (Threshold: ${CPU_THRESHOLD}%)"
-    
+    local cpu_usage
+    cpu_usage=$(get_cpu_usage)
+    local status="CPU usage (5-min avg): ${cpu_usage}% (Threshold: ${CPU_THRESHOLD}%)"
+    local idle=false
+
     if [[ $cpu_usage -lt $CPU_THRESHOLD ]]; then
+        if ! gpu_monitoring_enabled; then
+            idle=true
+        else
+            if is_gpu_idle; then idle=true; fi
+            status+=" | GPU usage: $GPU_SUMMARY"
+        fi
+    elif gpu_monitoring_enabled; then
+        status+=" | GPU usage: not checked (CPU busy)"
+    fi
+    log "INFO" "$status"
+
+    if [[ $idle == true ]]; then
         local now=$(date +%s)
         
         if [[ -f "$STATE_FILE" ]]; then
@@ -113,7 +169,7 @@ main() {
         fi
     else
         if [[ -f "$STATE_FILE" ]]; then
-            log "INFO" "CPU above threshold. Resetting idle timer."
+            log "INFO" "CPU or GPU above threshold. Resetting idle timer."
             rm -f "$STATE_FILE"
         else
             log "INFO" "System is active."

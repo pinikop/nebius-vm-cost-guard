@@ -79,3 +79,82 @@ assert_not_stopped() {
     assert_not_stopped
     [[ ! -f "$TEST_DIR/state/idle_since" ]]
 }
+
+@test "no GPU (auto, nvidia-smi missing): CPU-only behavior, stops VM" {
+    write_config 'GPU_MONITORING="auto"' 'NVIDIA_SMI="/nonexistent/nvidia-smi"'
+    run_guard
+    [ "$status" -eq 0 ]
+    assert_stopped
+    ! grep -q "GPU" "$TEST_DIR/log"
+}
+
+@test "one idle GPU: stops VM and logs CPU and GPU on one line" {
+    set_gpu "0, 10"
+    run_guard
+    [ "$status" -eq 0 ]
+    assert_stopped
+    grep -qE "CPU usage.*\| GPU usage" "$TEST_DIR/log"
+}
+
+@test "one busy GPU: does not stop VM and resets idle timer" {
+    set_gpu "90, 5000"
+    run_guard
+    [ "$status" -eq 0 ]
+    assert_not_stopped
+    [[ ! -f "$TEST_DIR/state/idle_since" ]]
+}
+
+@test "multi-GPU with one busy: does not stop VM" {
+    set_gpu "0, 10\n80, 9000"
+    run_guard
+    assert_not_stopped
+}
+
+@test "multi-GPU, busy one listed last: does not stop VM" {
+    set_gpu "0, 10\n6, 10"
+    run_guard
+    assert_not_stopped
+}
+
+@test "nvidia-smi failing: does not stop VM, logs ERROR" {
+    touch "$TEST_DIR/gpu_fail"
+    run_guard
+    [ "$status" -eq 0 ]
+    assert_not_stopped
+    grep -q "ERROR" "$TEST_DIR/log"
+}
+
+@test "nvidia-smi garbage output: does not stop VM" {
+    set_gpu "[N/A], [N/A]"
+    run_guard
+    assert_not_stopped
+    grep -q "ERROR" "$TEST_DIR/log"
+}
+
+@test "GPU_MONITORING=on with nvidia-smi missing: does not stop VM" {
+    write_config 'GPU_MONITORING="on"' 'NVIDIA_SMI="/nonexistent/nvidia-smi"'
+    run_guard
+    assert_not_stopped
+    grep -q "ERROR" "$TEST_DIR/log"
+}
+
+@test "GPU_MONITORING=off ignores a busy GPU" {
+    write_config 'GPU_MONITORING="off"'
+    set_gpu "99, 9000"
+    run_guard
+    assert_stopped
+}
+
+@test "CPU busy, GPU idle: does not stop VM" {
+    write_config 'CPU_THRESHOLD=0'
+    set_gpu "0, 10"
+    run_guard
+    assert_not_stopped
+}
+
+@test "unknown GPU_MONITORING value: treated as on" {
+    write_config 'GPU_MONITORING="bogus"'
+    set_gpu "99, 9000"
+    run_guard
+    assert_not_stopped
+}
