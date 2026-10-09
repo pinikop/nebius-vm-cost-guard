@@ -177,7 +177,7 @@ Edit `config.env` to customize:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `INSTANCE_ID` | `$(hostname)` | Your VM instance ID |
+| `INSTANCE_ID` | empty | VM instance ID. Empty = auto-detect from the instance metadata service. Set to override |
 | `CPU_THRESHOLD` | `10` | CPU % below which VM is "idle" |
 | `IDLE_THRESHOLD_SECONDS` | `1800` | Seconds idle before shutdown (30 min) |
 | `MIN_UPTIME_SECONDS` | `600` | Min uptime before allowing shutdown (10 min) |
