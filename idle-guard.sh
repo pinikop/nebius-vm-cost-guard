@@ -8,7 +8,7 @@ set -euo pipefail
 TESTED_NEBIUS_VERSION="0.12.287"
 
 # Ensure PATH is set for cron (cron may not set HOME to the CLI owner's home)
-export PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.nebius/bin:/root/.nebius/bin"
+export PATH="$PATH:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.nebius/bin:/root/.nebius/bin"
 
 # Load configuration
 CONFIG_FILE="$(dirname "$0")/config.env"
