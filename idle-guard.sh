@@ -71,6 +71,20 @@ gpu_settings_valid() {
         [[ "$GPU_MEM_IDLE_THRESHOLD_SECONDS" =~ ^[0-9]{1,9}$ ]]
 }
 
+# Exits non-zero if a core setting is not a plain integer (capped at 9 digits so
+# arithmetic cannot overflow). An empty value would otherwise act as 0 and stop the VM.
+core_settings_valid() {
+    # shellcheck disable=SC2153 # CPU_THRESHOLD comes from config.env, not a typo for GPU_THRESHOLD
+    [[ "$IDLE_THRESHOLD_SECONDS" =~ ^[0-9]{1,9}$ ]] &&
+        [[ "$CPU_THRESHOLD" =~ ^[0-9]{1,9}$ ]] &&
+        [[ "$MIN_UPTIME_SECONDS" =~ ^[0-9]{1,9}$ ]]
+}
+
+# Write the idle start time atomically so an interrupted write cannot leave an empty file
+write_state() {
+    echo "$1" > "$STATE_FILE.tmp" && mv "$STATE_FILE.tmp" "$STATE_FILE"
+}
+
 # Sample all GPUs GPU_SAMPLES times. Prints "<max_util_pct> <max_mem_mb>".
 # Logs the reason and returns non-zero on any nvidia-smi failure or unparsable output.
 get_gpu_usage() {
@@ -133,7 +147,7 @@ check_nebius_cli() {
         return 0
     fi
     local version
-    version=$(nebius version 2>/dev/null | head -n1 || true)
+    version=$(timeout -k 5 10 nebius version 2>/dev/null | head -n1 || true)
     if [[ "$version" != "$TESTED_NEBIUS_VERSION" ]]; then
         log "WARN" "nebius CLI version '${version:-unknown}' differs from tested $TESTED_NEBIUS_VERSION."
     fi
@@ -153,6 +167,11 @@ main() {
         exit 0
     fi
     
+    if ! core_settings_valid; then
+        log "ERROR" "Invalid IDLE_THRESHOLD_SECONDS, CPU_THRESHOLD or MIN_UPTIME_SECONDS. Not checking."
+        exit 1
+    fi
+
     local uptime
     uptime=$(get_uptime_seconds)
     if [[ $uptime -lt $MIN_UPTIME_SECONDS ]]; then
@@ -186,7 +205,12 @@ main() {
         if [[ -f "$STATE_FILE" ]]; then
             local idle_since
             idle_since=$(cat "$STATE_FILE")
-            local idle_duration=$((now - idle_since))
+            if [[ ! "$idle_since" =~ ^[0-9]{1,10}$ ]]; then
+                log "WARN" "Invalid state file content. Restarting idle tracking."
+                idle_since=$now
+                write_state "$now"
+            fi
+            local idle_duration=$((now - 10#$idle_since))
             
             log "INFO" "Idle for ${idle_duration}s (Threshold: ${IDLE_LIMIT}s)"
             
@@ -203,8 +227,8 @@ main() {
                 fi
             fi
         else
+            write_state "$now"
             check_nebius_cli
-            echo "$now" > "$STATE_FILE"
             log "INFO" "Started idle tracking at $(date -d "@$now" '+%Y-%m-%d %H:%M:%S')"
         fi
     else
