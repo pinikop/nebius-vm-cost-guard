@@ -2,7 +2,7 @@
 
 Automatically shuts down idle Nebius VMs to save costs.
 
-> ⚠️ **Disclaimer:** This tool adds a cost-protection layer but is not bulletproof. It may shut down your VM during active work if CPU usage patterns look idle (e.g., waiting for I/O, light coding). Tune thresholds for your workload and save your work frequently.  
+> ⚠️ **Disclaimer:** This tool adds a cost-protection layer but is not bulletproof. It may shut down your VM during active work if CPU and GPU usage look idle (e.g., waiting for I/O, light coding, or GPU work that falls between checks). Tune thresholds for your workload and save your work frequently.  
 > **Use at your own risk** - the author is not responsible for data loss, interrupted work, or unexpected shutdowns.
 
 ## How It Works
@@ -34,12 +34,14 @@ Limits:
 
 1. **Service account** with permissions to stop compute instances
    - Create service account in Nebius Console: [Service Account Guide](https://docs.nebius.com/iam/service-accounts/manage)
-   - Add to a group with editor/admin permissions (or grant `compute.instances.update` permission)
+   - Grant it the `compute.instance-power-operator` role (View, View metadata, Start, Stop) for the project that contains the VM, or a broader role. See [Nebius IAM roles](https://docs.nebius.com/iam/authorization/roles).
 
 2. **Nebius VM** with the service account attached: [Compute Documentation](https://docs.nebius.com/compute)
    - Preferred: attach the service account at VM creation (`--service-account-id`). The preinstalled Nebius CLI then authenticates automatically with the token at `/mnt/cloud-metadata/token`.
    - Existing VM without one: create a CLI profile for the service account using an authorized key. See [Nebius CLI on a VM](https://docs.nebius.com/cli/compute-vm).
    - Tested with Nebius CLI `0.12.287` (check with `nebius version`). The script logs a warning if the installed version differs.
+
+3. **On the VM:** bash, cron, `curl` and `timeout` (coreutils), which most Linux distributions include. `nvidia-smi` is needed on GPU VMs (it comes with the NVIDIA driver). `logger` is optional and adds syslog entries.
 
 ## Installation
 
@@ -116,6 +118,23 @@ sudo chmod +x /etc/update-motd.d/99-cost-guard
 ```
 
 If you changed `STATE_FILE`, use its directory instead of `/var/run/cost-guard`. On other distributions, put the same check in `/etc/profile.d/cost-guard.sh`.
+
+## Log rotation
+
+The log grows by about 100 KB per day (one check every 5 minutes) and is not rotated. For long-running VMs, add a rule:
+
+```bash
+sudo tee /etc/logrotate.d/cost-guard > /dev/null <<'EOF'
+/var/log/cost-guard.log {
+    weekly
+    rotate 4
+    compress
+    missingok
+    notifempty
+    copytruncate
+}
+EOF
+```
 
 ## Testing
 
@@ -222,6 +241,8 @@ Edit `config.env` to customize:
 | `LOG_FILE` | `/var/log/cost-guard.log` | Log file location |
 | `STATE_FILE` | `/var/run/cost-guard/idle_since` | State tracking file |
 | `ENABLED` | `true` | Set to `false` to disable without removing cron job |
+
+Invalid values are handled safely. If `IDLE_THRESHOLD_SECONDS`, `CPU_THRESHOLD` or `MIN_UPTIME_SECONDS` is not a whole number, the script logs an ERROR and does nothing. Invalid GPU settings count as a failed GPU check, so the VM stays up.
 
 ## Development
 
