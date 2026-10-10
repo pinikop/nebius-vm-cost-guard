@@ -322,3 +322,96 @@ assert_not_stopped() {
     assert_not_stopped
     [[ ! -f "$TEST_DIR/state/idle_since" ]]
 }
+
+@test "empty state file: restarts tracking, does not stop" {
+    write_config 'GPU_MONITORING="off"'
+    : > "$TEST_DIR/state/idle_since"
+    run_guard
+    [ "$status" -eq 0 ]
+    assert_not_stopped
+    grep -qE '^[0-9]+$' "$TEST_DIR/state/idle_since"
+    grep -q "Invalid state file" "$TEST_DIR/log"
+}
+
+@test "garbage state file: restarts tracking, does not stop" {
+    write_config 'GPU_MONITORING="off"'
+    echo "abc" > "$TEST_DIR/state/idle_since"
+    run_guard
+    [ "$status" -eq 0 ]
+    assert_not_stopped
+    grep -qE '^[0-9]+$' "$TEST_DIR/state/idle_since"
+}
+
+@test "overlong numeric state file: restarts tracking, does not stop" {
+    write_config 'GPU_MONITORING="off"'
+    echo "99999999999999999999" > "$TEST_DIR/state/idle_since"
+    run_guard
+    [ "$status" -eq 0 ]
+    assert_not_stopped
+}
+
+@test "empty IDLE_THRESHOLD_SECONDS: exits 1, does not stop" {
+    write_config 'GPU_MONITORING="off"' 'IDLE_THRESHOLD_SECONDS='
+    run_guard
+    [ "$status" -eq 1 ]
+    assert_not_stopped
+    grep -q "ERROR" "$TEST_DIR/log"
+}
+
+@test "non-numeric CPU_THRESHOLD: exits 1, does not stop" {
+    write_config 'GPU_MONITORING="off"' 'CPU_THRESHOLD=abc'
+    run_guard
+    [ "$status" -eq 1 ]
+    assert_not_stopped
+}
+
+@test "non-numeric MIN_UPTIME_SECONDS: exits 1, does not stop" {
+    write_config 'GPU_MONITORING="off"' 'MIN_UPTIME_SECONDS=1x'
+    run_guard
+    [ "$status" -eq 1 ]
+    assert_not_stopped
+}
+
+@test "first idle check writes the state file even if nebius version hangs" {
+    write_config 'GPU_MONITORING="off"'
+    rm -f "$TEST_DIR/state/idle_since"
+    cat > "$TEST_DIR/bin/nebius" <<EOT
+#!/bin/bash
+[[ "\$1" == "version" ]] && exec sleep 100
+echo "\$*" >> "$NEBIUS_CALLS"
+EOT
+    run_guard
+    [ "$status" -eq 0 ]
+    assert_not_stopped
+    grep -qE '^[0-9]+$' "$TEST_DIR/state/idle_since"
+}
+
+@test "nebius CLI missing: logs ERROR at idle start, does not stop" {
+    write_config 'GPU_MONITORING="off"'
+    rm -f "$TEST_DIR/state/idle_since" "$TEST_DIR/bin/nebius"
+    run env HOME=/nonexistent PATH="/usr/bin:/bin" bash "$TEST_DIR/app/idle-guard.sh"
+    [ "$status" -eq 0 ]
+    grep -q "nebius CLI not found" "$TEST_DIR/log"
+}
+
+@test "nebius CLI version differs: logs WARN at idle start" {
+    write_config 'GPU_MONITORING="off"'
+    rm -f "$TEST_DIR/state/idle_since"
+    printf '#!/bin/bash\n[[ "$1" == "version" ]] && echo 9.9.9\n' > "$TEST_DIR/bin/nebius"
+    run_guard
+    [ "$status" -eq 0 ]
+    grep -q "WARN.*9.9.9" "$TEST_DIR/log"
+}
+
+@test "GPU busy only on a later sample: max counts, does not stop" {
+    write_config 'GPU_SAMPLES=3'
+    cat > "$TEST_DIR/bin/nvidia-smi" <<EOT
+#!/bin/bash
+n=\$(cat "$TEST_DIR/n" 2>/dev/null || echo 0)
+echo \$((n + 1)) > "$TEST_DIR/n"
+if [[ \$n -eq 1 ]]; then echo "90, 10"; else echo "0, 10"; fi
+EOT
+    run_guard
+    [ "$status" -eq 0 ]
+    assert_not_stopped
+}
