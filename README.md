@@ -7,13 +7,27 @@ Automatically shuts down idle Nebius VMs to save costs.
 
 ## How It Works
 
-Cost Guard monitors your Nebius VM's CPU usage via cron and automatically stops the instance when idle:
+Cost Guard monitors your Nebius VM's CPU and GPU usage via cron and automatically stops the instance when idle:
 
 1. Cron runs the script every 5 minutes
 2. Script checks 5-minute CPU load average (not instant - avoids false positives)
-3. If CPU is below threshold, tracks idle duration
+3. If CPU is below threshold, it also checks the GPU (when present), then tracks idle duration
 4. When idle time exceeds threshold, runs `nebius compute instance stop` via the Nebius CLI
 5. VM shuts down and you stop paying
+
+### GPU detection
+
+The VM counts as idle only when both CPU and GPU are idle. CPU-only VMs behave as before.
+
+- `nvidia-smi` is sampled `GPU_SAMPLES` times (default 5), `GPU_SAMPLE_INTERVAL` seconds apart (default 2). The maximum utilization over all samples and all GPUs is used; the GPU is idle if it is below `GPU_THRESHOLD` (default 5%).
+- A busy GPU resets the idle timer. A failed check (`nvidia-smi` error, timeout, unparsable output, or invalid GPU settings) counts as active, logs an error, and also resets the timer. A failed check never causes a shutdown.
+- `GPU_MONITORING`: `auto` (default) checks the GPU only if `nvidia-smi` exists; `on` always checks it, and a missing `nvidia-smi` is an error that keeps the VM running; `off` ignores the GPU. Any other value acts like `on`.
+- Memory option: set `GPU_MEMORY_THRESHOLD_MB` above 0 to give a GPU that is idle but holds at least that much memory (for example, a loaded model) a longer limit, `GPU_MEM_IDLE_THRESHOLD_SECONDS` (default 3600). The longer limit is never shorter than `IDLE_THRESHOLD_SECONDS`, is decided on each check, and memory never blocks shutdown forever.
+
+Limits:
+- NVIDIA GPUs only.
+- Sampling covers about 8 seconds of each 5-minute check, so bursty GPU workloads (for example, inference with long gaps) can be missed. Tune the thresholds for your workload.
+- In `auto` mode a GPU VM silently falls back to CPU-only if `nvidia-smi` is not on `PATH`. Set `GPU_MONITORING="on"` to make that an error that keeps the VM running.
 
 ## Prerequisites
 
@@ -117,6 +131,39 @@ To verify Cost Guard works without waiting 30 minutes, temporarily use shorter t
    # To:              */5 * * * * /opt/cost-guard/idle-guard.sh
    ```
 
+## GPU testing
+
+Run these on a VM with an NVIDIA GPU, after the CPU test above.
+
+1. Add GPU test values to `/opt/cost-guard/config.env` (keep the CPU test values from above):
+   ```bash
+   GPU_THRESHOLD=5
+   GPU_SAMPLES=3
+   GPU_SAMPLE_INTERVAL=1
+   ```
+
+2. Start a GPU load and confirm `nvidia-smi` shows utilization above the threshold. For example, with PyTorch:
+   ```bash
+   python3 -c "
+   import torch
+   x = torch.randn(8192, 8192, device='cuda')
+   while True:
+       x = x @ x
+       x /= x.norm()
+   "
+   ```
+   Or use [gpu-burn](https://github.com/wilicc/gpu-burn).
+
+3. Run the script and check the log. The line should show GPU usage above the threshold, followed by "Resetting idle timer" (or "System is active." if no timer was running), and no shutdown:
+   ```bash
+   sudo /opt/cost-guard/idle-guard.sh
+   tail -5 /var/log/cost-guard.log
+   ```
+
+4. Stop the load. Within the next checks the log should show GPU usage below the threshold, idle tracking starting, and then the shutdown after `IDLE_THRESHOLD_SECONDS`.
+
+5. To compare, set `GPU_MONITORING="off"`: the busy GPU is then ignored and the VM is stopped once the CPU has been idle for `IDLE_THRESHOLD_SECONDS` (the first idle check only starts the timer). **This stops the VM - save your work first.** Restore production values afterward.
+
 ## Configuration
 
 **Important:** Default values are starting points. Tune them based on your specific workload and requirements.
@@ -129,6 +176,21 @@ Edit `config.env` to customize:
 | `CPU_THRESHOLD` | `10` | CPU % below which VM is "idle" |
 | `IDLE_THRESHOLD_SECONDS` | `1800` | Seconds idle before shutdown (30 min) |
 | `MIN_UPTIME_SECONDS` | `600` | Min uptime before allowing shutdown (10 min) |
+| `GPU_MONITORING` | `auto` | `auto`: check GPU if `nvidia-smi` exists; `on`: require it; `off`: CPU only |
+| `GPU_THRESHOLD` | `5` | GPU % below which the GPU is "idle" |
+| `GPU_SAMPLES` | `5` | `nvidia-smi` samples per check (max is used) |
+| `GPU_SAMPLE_INTERVAL` | `2` | Seconds between samples |
+| `GPU_MEMORY_THRESHOLD_MB` | `0` | GPU memory (MB) that earns the longer limit when the GPU is idle; `0` ignores memory |
+| `GPU_MEM_IDLE_THRESHOLD_SECONDS` | `3600` | Idle limit used when memory is held (never below `IDLE_THRESHOLD_SECONDS`) |
 | `LOG_FILE` | `/var/log/cost-guard.log` | Log file location |
 | `STATE_FILE` | `/var/run/cost-guard/idle_since` | State tracking file |
 | `ENABLED` | `true` | Set to `false` to disable without removing cron job |
+
+## Development
+
+```bash
+shellcheck idle-guard.sh
+bats tests/
+```
+
+Install bats-core from your distro (`sudo apt-get install bats`) or from [git](https://github.com/bats-core/bats-core). Tests use mock `nvidia-smi` and `nebius` commands, so no GPU or real VM is needed.
