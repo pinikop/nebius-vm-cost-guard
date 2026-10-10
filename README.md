@@ -154,7 +154,7 @@ Run these on a VM with an NVIDIA GPU, after the CPU test above.
    ```
    Or use [gpu-burn](https://github.com/wilicc/gpu-burn).
 
-3. Run the script and check the log. The line should show GPU usage above the threshold, followed by "Resetting idle timer", and no shutdown:
+3. Run the script and check the log. The line should show GPU usage above the threshold, followed by "Resetting idle timer" (or "System is active." if no timer was running), and no shutdown:
    ```bash
    sudo /opt/cost-guard/idle-guard.sh
    tail -5 /var/log/cost-guard.log
@@ -162,7 +162,7 @@ Run these on a VM with an NVIDIA GPU, after the CPU test above.
 
 4. Stop the load. Within the next checks the log should show GPU usage below the threshold, idle tracking starting, and then the shutdown after `IDLE_THRESHOLD_SECONDS`.
 
-5. To compare, set `GPU_MONITORING="off"`: the busy GPU is then ignored and the VM is stopped as soon as the CPU is idle. Restore production values afterward.
+5. To compare, set `GPU_MONITORING="off"`: the busy GPU is then ignored and the VM is stopped once the CPU has been idle for `IDLE_THRESHOLD_SECONDS` (the first idle check only starts the timer). **This stops the VM - save your work first.** Restore production values afterward.
 
 ## Configuration
 
