@@ -27,6 +27,11 @@ EOF
 cat "$TEST_DIR/curl_out"
 EOF
     echo "computeinstance-abc123" > "$TEST_DIR/curl_out"
+    # Mock logger so tests never write to the real syslog.
+    cat > "$TEST_DIR/bin/logger" <<EOF
+#!/bin/bash
+echo "\$*" >> "$TEST_DIR/logger_calls"
+EOF
     chmod +x "$TEST_DIR/bin/"*
 
     unset NVIDIA_SMI NVIDIA_DRIVER_DIR GPU_MONITORING GPU_THRESHOLD GPU_SAMPLES GPU_SAMPLE_INTERVAL \
@@ -479,4 +484,27 @@ EOT
     [ "$status" -eq 0 ]
     assert_not_stopped
     grep -q "nvidia-smi not found" "$TEST_DIR/log"
+}
+
+@test "ERROR is also written to the status file and syslog" {
+    touch "$TEST_DIR/gpu_fail"
+    run_guard
+    [ "$status" -eq 0 ]
+    grep -q "nvidia-smi failed" "$TEST_DIR/state/last_error"
+    grep -q "cost-guard.*nvidia-smi failed" "$TEST_DIR/logger_calls"
+}
+
+@test "a run without errors clears the status file" {
+    echo "old error" > "$TEST_DIR/state/last_error"
+    set_gpu "0, 10"
+    run_guard
+    [ "$status" -eq 0 ]
+    [[ ! -f "$TEST_DIR/state/last_error" ]]
+}
+
+@test "INFO and WARN do not create the status file" {
+    set_gpu "0, 10"
+    run_guard
+    [[ ! -f "$TEST_DIR/state/last_error" ]]
+    [[ ! -f "$TEST_DIR/logger_calls" ]]
 }
