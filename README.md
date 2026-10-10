@@ -21,13 +21,13 @@ The VM counts as idle only when both CPU and GPU are idle. CPU-only VMs behave a
 
 - `nvidia-smi` is sampled `GPU_SAMPLES` times (default 5), `GPU_SAMPLE_INTERVAL` seconds apart (default 2). The maximum utilization over all samples and all GPUs is used; the GPU is idle if it is below `GPU_THRESHOLD` (default 5%).
 - A busy GPU resets the idle timer. A failed check (`nvidia-smi` error, timeout, unparsable output, or invalid GPU settings) counts as active, logs an error, and also resets the timer. A failed check never causes a shutdown.
-- `GPU_MONITORING`: `auto` (default) checks the GPU only if `nvidia-smi` exists; `on` always checks it, and a missing `nvidia-smi` is an error that keeps the VM running; `off` ignores the GPU. Any other value acts like `on`.
+- `GPU_MONITORING`: `auto` (default) checks the GPU if `nvidia-smi` exists or the NVIDIA driver is loaded (if `nvidia-smi` is then missing, that is an error and the VM keeps running); `on` always checks it, and a missing `nvidia-smi` is an error that keeps the VM running; `off` ignores the GPU. Any other value acts like `on`.
 - Memory option: set `GPU_MEMORY_THRESHOLD_MB` above 0 to give a GPU that is idle but holds at least that much memory (for example, a loaded model) a longer limit, `GPU_MEM_IDLE_THRESHOLD_SECONDS` (default 3600). The longer limit is never shorter than `IDLE_THRESHOLD_SECONDS`, is decided on each check, and memory never blocks shutdown forever.
 
 Limits:
 - NVIDIA GPUs only.
 - Sampling covers about 8 seconds of each 5-minute check, so bursty GPU workloads (for example, inference with long gaps) can be missed. Tune the thresholds for your workload.
-- In `auto` mode a GPU VM silently falls back to CPU-only if `nvidia-smi` is not on `PATH`. Set `GPU_MONITORING="on"` to make that an error that keeps the VM running.
+- `auto` falls back to CPU-only only when `nvidia-smi` is missing and no NVIDIA driver is loaded (`/proc/driver/nvidia` absent), such as a VM without a GPU or without the driver installed.
 
 ## Prerequisites
 
@@ -176,7 +176,7 @@ Edit `config.env` to customize:
 | `CPU_THRESHOLD` | `10` | CPU % below which VM is "idle" |
 | `IDLE_THRESHOLD_SECONDS` | `1800` | Seconds idle before shutdown (30 min) |
 | `MIN_UPTIME_SECONDS` | `600` | Min uptime before allowing shutdown (10 min) |
-| `GPU_MONITORING` | `auto` | `auto`: check GPU if `nvidia-smi` exists; `on`: require it; `off`: CPU only |
+| `GPU_MONITORING` | `auto` | `auto`: check GPU if `nvidia-smi` exists or the NVIDIA driver is loaded; `on`: require `nvidia-smi`; `off`: CPU only |
 | `GPU_THRESHOLD` | `5` | GPU % below which the GPU is "idle" |
 | `GPU_SAMPLES` | `5` | `nvidia-smi` samples per check (max is used) |
 | `GPU_SAMPLE_INTERVAL` | `2` | Seconds between samples |
