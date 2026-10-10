@@ -201,3 +201,45 @@ assert_not_stopped() {
     assert_not_stopped
     grep -q "ERROR" "$TEST_DIR/log"
 }
+
+@test "memory held, idle 2000s: not stopped (limit 3600)" {
+    write_config 'GPU_MEMORY_THRESHOLD_MB=1024'
+    set_gpu "0, 2000"
+    echo $(($(date +%s) - 2000)) > "$TEST_DIR/state/idle_since"
+    run_guard
+    assert_not_stopped
+    [[ -f "$TEST_DIR/state/idle_since" ]]
+}
+
+@test "memory held, idle 4000s: stopped, log shows memory limit" {
+    write_config 'GPU_MEMORY_THRESHOLD_MB=1024'
+    set_gpu "0, 2000"
+    echo $(($(date +%s) - 4000)) > "$TEST_DIR/state/idle_since"
+    run_guard
+    assert_stopped
+    grep -q "memory held: limit 3600s" "$TEST_DIR/log"
+}
+
+@test "memory below threshold, idle 2000s: stopped (normal limit)" {
+    write_config 'GPU_MEMORY_THRESHOLD_MB=1024'
+    set_gpu "0, 100"
+    echo $(($(date +%s) - 2000)) > "$TEST_DIR/state/idle_since"
+    run_guard
+    assert_stopped
+}
+
+@test "memory option off (default), memory held, idle 2000s: stopped" {
+    set_gpu "0, 20000"
+    echo $(($(date +%s) - 2000)) > "$TEST_DIR/state/idle_since"
+    run_guard
+    assert_stopped
+}
+
+@test "non-numeric GPU_MEMORY_THRESHOLD_MB: does not stop VM" {
+    write_config 'GPU_MEMORY_THRESHOLD_MB="abc"'
+    set_gpu "0, 10"
+    run_guard
+    [ "$status" -eq 0 ]
+    assert_not_stopped
+    grep -q "ERROR" "$TEST_DIR/log"
+}

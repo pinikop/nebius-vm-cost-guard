@@ -25,6 +25,8 @@ GPU_MEMORY_THRESHOLD_MB="${GPU_MEMORY_THRESHOLD_MB:-0}"
 GPU_MEM_IDLE_THRESHOLD_SECONDS="${GPU_MEM_IDLE_THRESHOLD_SECONDS:-3600}"
 # Test hook and override for a non-standard nvidia-smi location
 NVIDIA_SMI="${NVIDIA_SMI:-nvidia-smi}"
+# Idle time required before shutdown; raised or lowered per check by is_gpu_idle
+IDLE_LIMIT=$IDLE_THRESHOLD_SECONDS
 
 STATE_DIR=$(dirname "$STATE_FILE")
 
@@ -61,7 +63,9 @@ gpu_monitoring_enabled() {
 gpu_settings_valid() {
     [[ "$GPU_SAMPLES" =~ ^[1-9][0-9]*$ ]] &&
         [[ "$GPU_SAMPLE_INTERVAL" =~ ^[0-9]+(\.[0-9]+)?$ ]] &&
-        [[ "$GPU_THRESHOLD" =~ ^[0-9]+$ ]]
+        [[ "$GPU_THRESHOLD" =~ ^[0-9]+$ ]] &&
+        [[ "$GPU_MEMORY_THRESHOLD_MB" =~ ^[0-9]+$ ]] &&
+        [[ "$GPU_MEM_IDLE_THRESHOLD_SECONDS" =~ ^[0-9]+$ ]]
 }
 
 # Sample all GPUs GPU_SAMPLES times. Prints "<max_util_pct> <max_mem_mb>".
@@ -108,7 +112,12 @@ is_gpu_idle() {
     fi
     read -r util mem <<< "$usage"
     GPU_SUMMARY="${util}% (max of ${GPU_SAMPLES} samples, Threshold: ${GPU_THRESHOLD}%, memory: ${mem}MB)"
-    ((util < 10#$GPU_THRESHOLD))
+    ((util < 10#$GPU_THRESHOLD)) || return 1
+    # Memory held by an idle process: allow a longer grace period before stopping
+    if ((10#$GPU_MEMORY_THRESHOLD_MB > 0 && mem >= 10#$GPU_MEMORY_THRESHOLD_MB)); then
+        IDLE_LIMIT=$((10#$GPU_MEM_IDLE_THRESHOLD_SECONDS))
+        GPU_SUMMARY+=", memory held: limit ${IDLE_LIMIT}s"
+    fi
 }
 
 # Log an error if the Nebius CLI is missing, a warning if its version differs from the tested one
@@ -131,6 +140,7 @@ get_uptime_seconds() {
 
 main() {
     log "INFO" "--- Cost Guard check starting ---"
+    IDLE_LIMIT=$IDLE_THRESHOLD_SECONDS
     
     if [[ "${ENABLED:-false}" != "true" ]]; then
         log "INFO" "Cost Guard is disabled."
@@ -168,9 +178,9 @@ main() {
             local idle_since=$(cat "$STATE_FILE")
             local idle_duration=$((now - idle_since))
             
-            log "INFO" "Idle for ${idle_duration}s (Threshold: ${IDLE_THRESHOLD_SECONDS}s)"
+            log "INFO" "Idle for ${idle_duration}s (Threshold: ${IDLE_LIMIT}s)"
             
-            if [[ $idle_duration -ge $IDLE_THRESHOLD_SECONDS ]]; then
+            if [[ $idle_duration -ge $IDLE_LIMIT ]]; then
                 log "WARN" "IDLE THRESHOLD EXCEEDED! Initiating shutdown."
                 
                 # Use service account authentication (automatic via instance metadata)
