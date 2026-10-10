@@ -29,7 +29,7 @@ EOF
     echo "computeinstance-abc123" > "$TEST_DIR/curl_out"
     chmod +x "$TEST_DIR/bin/"*
 
-    unset NVIDIA_SMI GPU_MONITORING GPU_THRESHOLD GPU_SAMPLES GPU_SAMPLE_INTERVAL \
+    unset NVIDIA_SMI NVIDIA_DRIVER_DIR GPU_MONITORING GPU_THRESHOLD GPU_SAMPLES GPU_SAMPLE_INTERVAL \
         GPU_MEMORY_THRESHOLD_MB GPU_MEM_IDLE_THRESHOLD_SECONDS
     write_config
     echo 1 > "$TEST_DIR/state/idle_since"
@@ -88,7 +88,7 @@ assert_not_stopped() {
 }
 
 @test "no GPU (auto, nvidia-smi missing): CPU-only behavior, stops VM" {
-    write_config 'GPU_MONITORING="auto"' 'NVIDIA_SMI="/nonexistent/nvidia-smi"'
+    write_config 'GPU_MONITORING="auto"' 'NVIDIA_SMI="/nonexistent/nvidia-smi"' 'NVIDIA_DRIVER_DIR="/nonexistent"'
     run_guard
     [ "$status" -eq 0 ]
     assert_stopped
@@ -470,4 +470,13 @@ EOT
     run_guard
     [ "$status" -eq 0 ]
     grep -q "Cannot determine a valid instance ID. Shutdown will not happen." "$TEST_DIR/log"
+}
+
+@test "auto, nvidia-smi missing but NVIDIA driver loaded: does not stop, logs ERROR" {
+    mkdir -p "$TEST_DIR/driver"
+    write_config 'GPU_MONITORING="auto"' 'NVIDIA_SMI="/nonexistent/nvidia-smi"' "NVIDIA_DRIVER_DIR=\"$TEST_DIR/driver\""
+    run_guard
+    [ "$status" -eq 0 ]
+    assert_not_stopped
+    grep -q "nvidia-smi not found" "$TEST_DIR/log"
 }
