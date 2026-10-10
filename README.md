@@ -252,4 +252,4 @@ shellcheck idle-guard.sh
 bats tests/
 ```
 
-Install bats-core from your distro (`sudo apt-get install bats`) or from [git](https://github.com/bats-core/bats-core). Tests use mock `nvidia-smi` and `nebius` commands, so no GPU or real VM is needed.
+Install bats-core 1.4 or newer from your distro (`sudo apt-get install bats` on Ubuntu 24.04) or from [git](https://github.com/bats-core/bats-core). Tests use mock `nvidia-smi` and `nebius` commands, so no GPU or real VM is needed.
