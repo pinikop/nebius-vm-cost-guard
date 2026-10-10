@@ -16,6 +16,7 @@ if [[ ! -f "$CONFIG_FILE" ]]; then
     echo "ERROR: Configuration file not found: $CONFIG_FILE"
     exit 1
 fi
+# shellcheck source=/dev/null
 source "$CONFIG_FILE"
 GPU_MONITORING="${GPU_MONITORING:-auto}"
 GPU_THRESHOLD="${GPU_THRESHOLD:-5}"
@@ -44,8 +45,9 @@ log() {
 
 # Get CPU usage based on 5-minute load average
 get_cpu_usage() {
-    local lavg=$(awk '{print $2}' /proc/loadavg)
-    local cpus=$(nproc)
+    local lavg cpus
+    lavg=$(awk '{print $2}' /proc/loadavg)
+    cpus=$(nproc)
     awk -v l="$lavg" -v c="$cpus" 'BEGIN {printf "%.0f", (l / c) * 100}'
 }
 
@@ -151,7 +153,8 @@ main() {
         exit 0
     fi
     
-    local uptime=$(get_uptime_seconds)
+    local uptime
+    uptime=$(get_uptime_seconds)
     if [[ $uptime -lt $MIN_UPTIME_SECONDS ]]; then
         log "INFO" "Uptime ($uptime s) < Min ($MIN_UPTIME_SECONDS s). Skipping."
         rm -f "$STATE_FILE"
@@ -160,6 +163,7 @@ main() {
     
     local cpu_usage
     cpu_usage=$(get_cpu_usage)
+    # shellcheck disable=SC2153 # CPU_THRESHOLD comes from config.env, not a typo for GPU_THRESHOLD
     local status="CPU usage (5-min avg): ${cpu_usage}% (Threshold: ${CPU_THRESHOLD}%)"
     local idle=false
 
@@ -176,10 +180,12 @@ main() {
     log "INFO" "$status"
 
     if [[ $idle == true ]]; then
-        local now=$(date +%s)
+        local now
+        now=$(date +%s)
         
         if [[ -f "$STATE_FILE" ]]; then
-            local idle_since=$(cat "$STATE_FILE")
+            local idle_since
+            idle_since=$(cat "$STATE_FILE")
             local idle_duration=$((now - idle_since))
             
             log "INFO" "Idle for ${idle_duration}s (Threshold: ${IDLE_LIMIT}s)"
