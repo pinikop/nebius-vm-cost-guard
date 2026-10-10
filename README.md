@@ -80,6 +80,33 @@ Limits:
    tail -5 /var/log/cost-guard.log
    ```
 
+   The log should contain no `ERROR` lines. See [Checking for problems](#checking-for-problems).
+
+## Checking for problems
+
+Cost Guard runs in the background, so errors are easy to miss. It never stops a VM because a check failed. For example, if `nvidia-smi` is missing or broken on a GPU VM, the VM is treated as busy and keeps running (and costing money) until you fix it. Check for errors:
+
+```bash
+grep -E 'ERROR|WARN' /var/log/cost-guard.log | tail
+journalctl -t cost-guard -p err      # the same errors in syslog, if journald is used
+```
+
+Errors are also written to `/var/run/cost-guard/last_error`. The file exists only if the latest check logged an error, and the next clean check removes it. To see it when you log in over SSH (Ubuntu and Debian):
+
+```bash
+sudo tee /etc/update-motd.d/99-cost-guard > /dev/null <<'EOF'
+#!/bin/sh
+f=/var/run/cost-guard/last_error
+if [ -f "$f" ]; then
+    echo "Cost Guard: the last check reported errors. This VM may not stop when idle."
+    cat "$f"
+fi
+EOF
+sudo chmod +x /etc/update-motd.d/99-cost-guard
+```
+
+If you changed `STATE_FILE`, use its directory instead of `/var/run/cost-guard`. On other distributions, put the same check in `/etc/profile.d/cost-guard.sh`.
+
 ## Testing
 
 To verify Cost Guard works without waiting 30 minutes, temporarily use shorter thresholds:
