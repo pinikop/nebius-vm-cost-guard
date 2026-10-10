@@ -12,7 +12,7 @@ Cost Guard monitors your Nebius VM's CPU and GPU usage via cron and automaticall
 1. Cron runs the script every 5 minutes
 2. Script checks 5-minute CPU load average (not instant - avoids false positives)
 3. If CPU is below threshold, it also checks the GPU (when present), then tracks idle duration
-4. When idle time exceeds threshold, runs `nebius compute instance stop` via the Nebius CLI
+4. When idle time exceeds threshold, looks up the VM's instance ID (from the instance metadata service unless `INSTANCE_ID` is set) and runs `nebius compute instance stop` via the Nebius CLI
 5. VM shuts down and you stop paying
 
 ### GPU detection
@@ -83,7 +83,12 @@ Limits:
    ```bash
    sudo /opt/cost-guard/idle-guard.sh
    tail -5 /var/log/cost-guard.log
+
+   # The instance ID lookup must print your VM's ID (needs curl)
+   curl -s -H "Metadata: true" http://metadata.nebius.internal/v1/instance-data/id
    ```
+
+   The script also checks the instance ID when idle tracking starts. If you see `Cannot determine a valid instance ID` in the log, set `INSTANCE_ID` in `config.env` (find it with `nebius compute instance list`).
 
 ## Testing
 
@@ -177,7 +182,7 @@ Edit `config.env` to customize:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `INSTANCE_ID` | `$(hostname)` | Your VM instance ID |
+| `INSTANCE_ID` | empty | VM instance ID. Empty = auto-detect from the instance metadata service (requires `curl`). Set to override |
 | `CPU_THRESHOLD` | `10` | CPU % below which VM is "idle" |
 | `IDLE_THRESHOLD_SECONDS` | `1800` | Seconds idle before shutdown (30 min) |
 | `MIN_UPTIME_SECONDS` | `600` | Min uptime before allowing shutdown (10 min) |

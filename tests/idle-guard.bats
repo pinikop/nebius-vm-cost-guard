@@ -20,6 +20,13 @@ EOF
 [[ -f "$TEST_DIR/gpu_fail" ]] && exit 9
 cat "$GPU_OUTPUT"
 EOF
+    # Mock curl (metadata service): prints curl_out, or fails if curl_fail exists.
+    cat > "$TEST_DIR/bin/curl" <<EOF
+#!/bin/bash
+[[ -f "$TEST_DIR/curl_fail" ]] && exit 22
+cat "$TEST_DIR/curl_out"
+EOF
+    echo "computeinstance-abc123" > "$TEST_DIR/curl_out"
     chmod +x "$TEST_DIR/bin/"*
 
     unset NVIDIA_SMI GPU_MONITORING GPU_THRESHOLD GPU_SAMPLES GPU_SAMPLE_INTERVAL \
@@ -414,4 +421,53 @@ EOT
     run_guard
     [ "$status" -eq 0 ]
     assert_not_stopped
+}
+
+@test "empty INSTANCE_ID: uses the ID from the metadata service" {
+    write_config 'GPU_MONITORING="off"' 'INSTANCE_ID=""'
+    run_guard
+    [ "$status" -eq 0 ]
+    grep -q "compute instance stop --id computeinstance-abc123" "$NEBIUS_CALLS"
+}
+
+@test "INSTANCE_ID override wins over the metadata service" {
+    write_config 'GPU_MONITORING="off"'
+    run_guard
+    assert_stopped
+}
+
+@test "metadata lookup fails: exits 1, does not stop" {
+    write_config 'GPU_MONITORING="off"' 'INSTANCE_ID=""'
+    touch "$TEST_DIR/curl_fail"
+    run_guard
+    [ "$status" -eq 1 ]
+    assert_not_stopped
+    grep -q "Cannot determine a valid instance ID" "$TEST_DIR/log"
+}
+
+@test "metadata returns empty output: does not stop" {
+    write_config 'GPU_MONITORING="off"' 'INSTANCE_ID=""'
+    : > "$TEST_DIR/curl_out"
+    run_guard
+    [ "$status" -eq 1 ]
+    assert_not_stopped
+}
+
+@test "metadata returns junk (HTML or an option): does not stop" {
+    write_config 'GPU_MONITORING="off"' 'INSTANCE_ID=""'
+    echo "--profile x" > "$TEST_DIR/curl_out"
+    run_guard
+    assert_not_stopped
+    printf '<html>\nCaptive</html>\n' > "$TEST_DIR/curl_out"
+    run_guard
+    assert_not_stopped
+}
+
+@test "first idle check logs ERROR if the instance ID cannot be determined" {
+    write_config 'GPU_MONITORING="off"' 'INSTANCE_ID=""'
+    touch "$TEST_DIR/curl_fail"
+    rm -f "$TEST_DIR/state/idle_since"
+    run_guard
+    [ "$status" -eq 0 ]
+    grep -q "Cannot determine a valid instance ID. Shutdown will not happen." "$TEST_DIR/log"
 }

@@ -153,6 +153,25 @@ check_nebius_cli() {
     fi
 }
 
+# Print the instance ID: config override, else instance metadata service.
+# Fails if the value is missing or does not look like an ID, so junk is never passed to the CLI.
+get_instance_id() {
+    local id="${INSTANCE_ID:-}"
+    if [[ -z "$id" ]]; then
+        id=$(curl -sf -m 5 -H "Metadata: true" \
+            "http://metadata.nebius.internal/v1/instance-data/id") || return 1
+    fi
+    [[ "$id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$ ]] || return 1
+    echo "$id"
+}
+
+# Log an error now if the ID cannot be determined, instead of at shutdown time 30+ minutes later
+check_instance_id() {
+    if ! get_instance_id > /dev/null; then
+        log "ERROR" "Cannot determine a valid instance ID. Shutdown will not happen."
+    fi
+}
+
 # Get system uptime in seconds
 get_uptime_seconds() {
     awk '{print int($1)}' /proc/uptime
@@ -217,9 +236,15 @@ main() {
             if [[ $idle_duration -ge $IDLE_LIMIT ]]; then
                 log "WARN" "IDLE THRESHOLD EXCEEDED! Initiating shutdown."
                 
+                local instance_id
+                if ! instance_id=$(get_instance_id); then
+                    log "ERROR" "Cannot determine a valid instance ID. Not stopping."
+                    exit 1
+                fi
+
                 # Use service account authentication (automatic via instance metadata)
                 if nebius compute instance stop \
-                    --id "$INSTANCE_ID" >> "$LOG_FILE" 2>&1; then
+                    --id "$instance_id" >> "$LOG_FILE" 2>&1; then
                     log "INFO" "Shutdown command sent successfully."
                 else
                     log "ERROR" "Nebius CLI command failed."
@@ -229,6 +254,7 @@ main() {
         else
             write_state "$now"
             check_nebius_cli
+            check_instance_id
             log "INFO" "Started idle tracking at $(date -d "@$now" '+%Y-%m-%d %H:%M:%S')"
         fi
     else
