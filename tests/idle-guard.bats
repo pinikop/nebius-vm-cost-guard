@@ -508,3 +508,28 @@ EOT
     [[ ! -f "$TEST_DIR/state/last_error" ]]
     [[ ! -f "$TEST_DIR/logger_calls" ]]
 }
+
+@test "second run while another check holds the lock: skips quietly, changes nothing" {
+    write_config 'GPU_MONITORING="off"'
+    echo "old error" > "$TEST_DIR/state/last_error"
+    exec 8> "$TEST_DIR/state/lock"
+    flock -n 8
+    run_guard
+    exec 8>&-
+    [ "$status" -eq 0 ]
+    assert_not_stopped
+    grep -q "Previous run still active" "$TEST_DIR/log"
+    [[ -f "$TEST_DIR/state/last_error" ]]
+    [[ -f "$TEST_DIR/state/idle_since" ]]
+}
+
+@test "after the lock is released the next run works" {
+    write_config 'GPU_MONITORING="off"'
+    exec 8> "$TEST_DIR/state/lock"
+    flock -n 8
+    run_guard
+    exec 8>&-
+    run_guard
+    [ "$status" -eq 0 ]
+    assert_stopped
+}

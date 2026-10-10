@@ -41,7 +41,7 @@ Limits:
    - Existing VM without one: create a CLI profile for the service account using an authorized key. See [Nebius CLI on a VM](https://docs.nebius.com/cli/compute-vm).
    - Tested with Nebius CLI `0.12.287` (check with `nebius version`). The script logs a warning if the installed version differs.
 
-3. **On the VM:** bash, cron, `curl` and `timeout` (coreutils), which most Linux distributions include. `nvidia-smi` is needed on GPU VMs (it comes with the NVIDIA driver). `logger` is optional and adds syslog entries.
+3. **On the VM:** bash, cron, `curl` and `timeout` (coreutils), which most Linux distributions include. `nvidia-smi` is needed on GPU VMs (it comes with the NVIDIA driver). `flock` (util-linux) stops overlapping runs and `logger` adds syslog entries; both are optional, and the script works without them.
 
 ## Installation
 
