@@ -26,6 +26,7 @@ The VM counts as idle only when both CPU and GPU are idle. CPU-only VMs behave a
 
 Limits:
 - NVIDIA GPUs only.
+- GPUs that report `[N/A]` for utilization or memory (for example, some MIG or vGPU setups) are treated as active, so the VM is never stopped. Use `GPU_MONITORING="off"` if you want CPU-only detection there.
 - Sampling covers about 8 seconds of each 5-minute check, so bursty GPU workloads (for example, inference with long gaps) can be missed. Tune the thresholds for your workload.
 - In `auto` mode a GPU VM silently falls back to CPU-only if `nvidia-smi` is not on `PATH`. Set `GPU_MONITORING="on"` to make that an error that keeps the VM running.
 
@@ -62,11 +63,15 @@ Limits:
    sudo mkdir -p /opt/cost-guard
    sudo cp config.env idle-guard.sh /opt/cost-guard/
    sudo chmod +x /opt/cost-guard/idle-guard.sh
+   sudo chown root:root /opt/cost-guard/config.env /opt/cost-guard/idle-guard.sh
+   sudo chmod 644 /opt/cost-guard/config.env
 
    sudo touch /var/log/cost-guard.log
    sudo chmod 644 /var/log/cost-guard.log
    ```
    
+   **Note:** The script runs as root and sources `config.env`, so keep both files root-owned and not writable by other users. Do not run it from a user-writable clone.
+
    **Note:** If you changed `LOG_FILE` or `STATE_FILE` paths in step 3, adjust the paths accordingly. The state directory is created automatically by the script.
 
 5. Add cron job (checks every 5 minutes)
