@@ -25,7 +25,7 @@ Setup:
 
 9. **Manual stop.** Run `nebius compute instance stop --id <ID>` by hand last, since it stops the VM. Note that it blocks until the VM is stopped, then start the VM again.
 10. **Full cycle.** Use test thresholds (README Testing section) with an idle VM. The VM stops after the idle limit. After you start it again, the next check does not stop it early.
-11. **Missing permission.** Remove the stop permission from the service account and repeat step 10. The log shows `Nebius CLI command failed`, the VM stays up, and the check keeps retrying.
+11. **Missing permission.** Remove the stop permission (the `compute.instance-power-operator` role or equivalent) from the service account and repeat step 10. The log shows `Nebius CLI command failed`, the VM stays up, and the check keeps retrying.
 
 ## Visibility
 
