@@ -20,6 +20,11 @@ EOF
 [[ -f "$TEST_DIR/gpu_fail" ]] && exit 9
 cat "$GPU_OUTPUT"
 EOF
+    # Mock logger so tests never write to the real syslog.
+    cat > "$TEST_DIR/bin/logger" <<EOF
+#!/bin/bash
+echo "\$*" >> "$TEST_DIR/logger_calls"
+EOF
     chmod +x "$TEST_DIR/bin/"*
 
     unset NVIDIA_SMI GPU_MONITORING GPU_THRESHOLD GPU_SAMPLES GPU_SAMPLE_INTERVAL \
@@ -321,4 +326,27 @@ assert_not_stopped() {
     [ "$status" -eq 0 ]
     assert_not_stopped
     [[ ! -f "$TEST_DIR/state/idle_since" ]]
+}
+
+@test "ERROR is also written to the status file and syslog" {
+    touch "$TEST_DIR/gpu_fail"
+    run_guard
+    [ "$status" -eq 0 ]
+    grep -q "nvidia-smi failed" "$TEST_DIR/state/last_error"
+    grep -q "cost-guard.*nvidia-smi failed" "$TEST_DIR/logger_calls"
+}
+
+@test "a run without errors clears the status file" {
+    echo "old error" > "$TEST_DIR/state/last_error"
+    set_gpu "0, 10"
+    run_guard
+    [ "$status" -eq 0 ]
+    [[ ! -f "$TEST_DIR/state/last_error" ]]
+}
+
+@test "INFO and WARN do not create the status file" {
+    set_gpu "0, 10"
+    run_guard
+    [[ ! -f "$TEST_DIR/state/last_error" ]]
+    [[ ! -f "$TEST_DIR/logger_calls" ]]
 }

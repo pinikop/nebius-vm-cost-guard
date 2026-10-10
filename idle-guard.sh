@@ -36,11 +36,23 @@ if [[ ! -d "$STATE_DIR" ]]; then
     mkdir -p "$STATE_DIR" || { echo "ERROR: Cannot create state dir $STATE_DIR"; exit 1; }
 fi
 
+# Status file shown at login (see README). It exists only if the last run logged an ERROR.
+ERROR_FILE="$STATE_DIR/last_error"
+
+# Surface an error beyond the log file: status file for the login banner, syslog if available
+report_error() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') $1" >> "$ERROR_FILE" 2>/dev/null || true
+    if command -v logger > /dev/null; then
+        logger -t cost-guard -p user.err -- "$1" || true
+    fi
+}
+
 # Logging
 log() {
     local level="$1"
     shift
     echo "$(date '+%Y-%m-%d %H:%M:%S') [$level] $*" >> "$LOG_FILE" 2>&1
+    if [[ "$level" == "ERROR" ]]; then report_error "$*"; fi
 }
 
 # Get CPU usage based on 5-minute load average
@@ -145,6 +157,7 @@ get_uptime_seconds() {
 }
 
 main() {
+    rm -f "$ERROR_FILE"
     log "INFO" "--- Cost Guard check starting ---"
     IDLE_LIMIT=$IDLE_THRESHOLD_SECONDS
     
