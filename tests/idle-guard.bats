@@ -243,3 +243,82 @@ assert_not_stopped() {
     assert_not_stopped
     grep -q "ERROR" "$TEST_DIR/log"
 }
+
+@test "memory limit shorter than normal limit: never shortens (600s, idle 1000s)" {
+    write_config 'GPU_MEMORY_THRESHOLD_MB=1024' 'GPU_MEM_IDLE_THRESHOLD_SECONDS=600'
+    set_gpu "0, 2000"
+    echo $(($(date +%s) - 1000)) > "$TEST_DIR/state/idle_since"
+    run_guard
+    [ "$status" -eq 0 ]
+    assert_not_stopped
+}
+
+@test "memory limit 0: never shortens (idle 1000s)" {
+    write_config 'GPU_MEMORY_THRESHOLD_MB=1024' 'GPU_MEM_IDLE_THRESHOLD_SECONDS=0'
+    set_gpu "0, 2000"
+    echo $(($(date +%s) - 1000)) > "$TEST_DIR/state/idle_since"
+    run_guard
+    [ "$status" -eq 0 ]
+    assert_not_stopped
+}
+
+@test "overflowing GPU_MEM_IDLE_THRESHOLD_SECONDS: does not stop VM" {
+    write_config 'GPU_MEMORY_THRESHOLD_MB=1024' 'GPU_MEM_IDLE_THRESHOLD_SECONDS=9223372036854775808'
+    set_gpu "0, 2000"
+    echo $(($(date +%s) - 10)) > "$TEST_DIR/state/idle_since"
+    run_guard
+    [ "$status" -eq 0 ]
+    assert_not_stopped
+    grep -q "ERROR" "$TEST_DIR/log"
+}
+
+@test "non-numeric GPU_MEM_IDLE_THRESHOLD_SECONDS: does not stop VM" {
+    write_config 'GPU_MEMORY_THRESHOLD_MB=1024' 'GPU_MEM_IDLE_THRESHOLD_SECONDS="abc"'
+    set_gpu "0, 2000"
+    run_guard
+    [ "$status" -eq 0 ]
+    assert_not_stopped
+    grep -q "ERROR" "$TEST_DIR/log"
+}
+
+@test "memory held, idle 3500s: not stopped" {
+    write_config 'GPU_MEMORY_THRESHOLD_MB=1024'
+    set_gpu "0, 2000"
+    echo $(($(date +%s) - 3500)) > "$TEST_DIR/state/idle_since"
+    run_guard
+    assert_not_stopped
+}
+
+@test "memory held, idle 3601s: stopped" {
+    write_config 'GPU_MEMORY_THRESHOLD_MB=1024'
+    set_gpu "0, 2000"
+    echo $(($(date +%s) - 3601)) > "$TEST_DIR/state/idle_since"
+    run_guard
+    assert_stopped
+}
+
+@test "memory exactly at threshold counts as held" {
+    write_config 'GPU_MEMORY_THRESHOLD_MB=2000'
+    set_gpu "0, 2000"
+    echo $(($(date +%s) - 2000)) > "$TEST_DIR/state/idle_since"
+    run_guard
+    assert_not_stopped
+}
+
+@test "memory one below threshold is not held" {
+    write_config 'GPU_MEMORY_THRESHOLD_MB=2000'
+    set_gpu "0, 1999"
+    echo $(($(date +%s) - 2000)) > "$TEST_DIR/state/idle_since"
+    run_guard
+    assert_stopped
+}
+
+@test "memory held but GPU util above threshold: not stopped, timer reset" {
+    write_config 'GPU_MEMORY_THRESHOLD_MB=1024'
+    set_gpu "50, 2000"
+    echo $(($(date +%s) - 4000)) > "$TEST_DIR/state/idle_since"
+    run_guard
+    [ "$status" -eq 0 ]
+    assert_not_stopped
+    [[ ! -f "$TEST_DIR/state/idle_since" ]]
+}

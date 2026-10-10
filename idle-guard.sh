@@ -59,13 +59,14 @@ gpu_monitoring_enabled() {
     esac
 }
 
-# Returns non-zero if any GPU setting is not numeric.
+# Returns non-zero if any GPU setting is not numeric. Integers are capped at
+# 9 digits so 10# arithmetic cannot overflow.
 gpu_settings_valid() {
-    [[ "$GPU_SAMPLES" =~ ^[1-9][0-9]*$ ]] &&
+    [[ "$GPU_SAMPLES" =~ ^[1-9][0-9]{0,8}$ ]] &&
         [[ "$GPU_SAMPLE_INTERVAL" =~ ^[0-9]+(\.[0-9]+)?$ ]] &&
-        [[ "$GPU_THRESHOLD" =~ ^[0-9]+$ ]] &&
-        [[ "$GPU_MEMORY_THRESHOLD_MB" =~ ^[0-9]+$ ]] &&
-        [[ "$GPU_MEM_IDLE_THRESHOLD_SECONDS" =~ ^[0-9]+$ ]]
+        [[ "$GPU_THRESHOLD" =~ ^[0-9]{1,9}$ ]] &&
+        [[ "$GPU_MEMORY_THRESHOLD_MB" =~ ^[0-9]{1,9}$ ]] &&
+        [[ "$GPU_MEM_IDLE_THRESHOLD_SECONDS" =~ ^[0-9]{1,9}$ ]]
 }
 
 # Sample all GPUs GPU_SAMPLES times. Prints "<max_util_pct> <max_mem_mb>".
@@ -113,9 +114,12 @@ is_gpu_idle() {
     read -r util mem <<< "$usage"
     GPU_SUMMARY="${util}% (max of ${GPU_SAMPLES} samples, Threshold: ${GPU_THRESHOLD}%, memory: ${mem}MB)"
     ((util < 10#$GPU_THRESHOLD)) || return 1
-    # Memory held by an idle process: allow a longer grace period before stopping
+    # Memory held by an idle process: allow a longer grace period before stopping.
+    # Memory only lengthens the limit, never shortens it.
     if ((10#$GPU_MEMORY_THRESHOLD_MB > 0 && mem >= 10#$GPU_MEMORY_THRESHOLD_MB)); then
-        IDLE_LIMIT=$((10#$GPU_MEM_IDLE_THRESHOLD_SECONDS))
+        if ((10#$GPU_MEM_IDLE_THRESHOLD_SECONDS > IDLE_LIMIT)); then
+            IDLE_LIMIT=$((10#$GPU_MEM_IDLE_THRESHOLD_SECONDS))
+        fi
         GPU_SUMMARY+=", memory held: limit ${IDLE_LIMIT}s"
     fi
 }

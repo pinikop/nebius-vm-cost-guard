@@ -29,6 +29,8 @@ NVIDIA only.
 
 If above 0 and any GPU holds at least that much memory at idle utilization, the shutdown threshold is `GPU_MEM_IDLE_THRESHOLD_SECONDS` (3600) instead of `IDLE_THRESHOLD_SECONDS` (1800). Memory never blocks shutdown outright, so a stuck process cannot keep the VM alive forever.
 
+The limit is decided each tick from the current reading (no hysteresis; the state file holds only the idle start time). The larger of the two limits applies, so memory can only lengthen the wait.
+
 ## Fail-safe
 
 `nvidia-smi` missing under `on`, failing, timing out, or returning non-numeric output: treat the GPU as active, log an ERROR, reset the idle timer. Never stop because a check failed.
@@ -38,7 +40,7 @@ If above 0 and any GPU holds at least that much memory at idle utilization, the 
 - `get_gpu_usage`: prints `<max_util> <max_mem_mb>`; non-zero exit on failure.
 - `is_gpu_idle`: wraps it, sets the active threshold, returns idle/active.
 - `main`: after the CPU check shows idle, run the GPU check. Busy or failed resets the timer. State file stays a single timestamp.
-- One log line per check: `CPU 3% (<10) | GPU 0% (<5, 5 samples, mem 12MB)`.
+- One log line per check: `CPU usage (5-min avg): 3% (Threshold: 10%) | GPU usage: 0% (max of 5 samples, Threshold: 5%, memory: 12MB)`.
 - `PATH` is extended with `$PATH:` first so tests can put mocks on it. Under cron behavior is unchanged.
 
 ## Tests (bats-core)
