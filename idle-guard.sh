@@ -26,6 +26,8 @@ GPU_MEMORY_THRESHOLD_MB="${GPU_MEMORY_THRESHOLD_MB:-0}"
 GPU_MEM_IDLE_THRESHOLD_SECONDS="${GPU_MEM_IDLE_THRESHOLD_SECONDS:-3600}"
 # Test hook and override for a non-standard nvidia-smi location
 NVIDIA_SMI="${NVIDIA_SMI:-nvidia-smi}"
+# Exists while the NVIDIA kernel driver is loaded (test hook like NVIDIA_SMI)
+NVIDIA_DRIVER_DIR="${NVIDIA_DRIVER_DIR:-/proc/driver/nvidia}"
 # Idle time required before shutdown; raised or lowered per check by is_gpu_idle
 IDLE_LIMIT=$IDLE_THRESHOLD_SECONDS
 
@@ -51,12 +53,13 @@ get_cpu_usage() {
     awk -v l="$lavg" -v c="$cpus" 'BEGIN {printf "%.0f", (l / c) * 100}'
 }
 
-# GPU checks run when GPU_MONITORING is on, or auto with nvidia-smi present.
+# GPU checks run when GPU_MONITORING is on, or auto with nvidia-smi present or the
+# NVIDIA driver loaded (a loaded driver without nvidia-smi must not look like "no GPU").
 # Unknown values act like "on" so a typo can never cause a shutdown.
 gpu_monitoring_enabled() {
     case "$GPU_MONITORING" in
         off) return 1 ;;
-        auto) command -v "$NVIDIA_SMI" > /dev/null ;;
+        auto) command -v "$NVIDIA_SMI" > /dev/null || [[ -d "$NVIDIA_DRIVER_DIR" ]] ;;
         *) return 0 ;;
     esac
 }
@@ -75,6 +78,10 @@ gpu_settings_valid() {
 # Logs the reason and returns non-zero on any nvidia-smi failure or unparsable output.
 get_gpu_usage() {
     local max_util=0 max_mem=0 sample out util mem
+    if ! command -v "$NVIDIA_SMI" > /dev/null; then
+        log "ERROR" "nvidia-smi not found, but GPU monitoring is on or the NVIDIA driver is loaded. Treating GPU as active."
+        return 1
+    fi
     for ((sample = 1; sample <= GPU_SAMPLES; sample++)); do
         out=$(timeout -k 5 10 "$NVIDIA_SMI" \
             --query-gpu=utilization.gpu,memory.used \
