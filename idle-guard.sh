@@ -4,8 +4,11 @@
 #
 set -euo pipefail
 
-# Ensure PATH is set for cron
-export PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.nebius/bin"
+# Nebius CLI version this script was tested with
+TESTED_NEBIUS_VERSION="0.12.287"
+
+# Ensure PATH is set for cron (cron may not set HOME to the CLI owner's home)
+export PATH="/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.nebius/bin:/root/.nebius/bin"
 
 # Load configuration
 CONFIG_FILE="$(dirname "$0")/config.env"
@@ -37,6 +40,19 @@ get_cpu_usage() {
 }
 
 # TODO: Add GPU monitoring support
+
+# Log an error if the Nebius CLI is missing, a warning if its version differs from the tested one
+check_nebius_cli() {
+    if ! command -v nebius > /dev/null; then
+        log "ERROR" "nebius CLI not found in PATH. Shutdown will fail."
+        return 0
+    fi
+    local version
+    version=$(nebius version 2>/dev/null | head -n1 || true)
+    if [[ "$version" != "$TESTED_NEBIUS_VERSION" ]]; then
+        log "WARN" "nebius CLI version '${version:-unknown}' differs from tested $TESTED_NEBIUS_VERSION."
+    fi
+}
 
 # Get system uptime in seconds
 get_uptime_seconds() {
@@ -74,9 +90,8 @@ main() {
                 log "WARN" "IDLE THRESHOLD EXCEEDED! Initiating shutdown."
                 
                 # Use service account authentication (automatic via instance metadata)
-                if nebius compute instance update \
-                    --id "$INSTANCE_ID" \
-                    --stopped >> "$LOG_FILE" 2>&1; then
+                if nebius compute instance stop \
+                    --id "$INSTANCE_ID" >> "$LOG_FILE" 2>&1; then
                     log "INFO" "Shutdown command sent successfully."
                 else
                     log "ERROR" "Nebius CLI command failed."
@@ -84,6 +99,7 @@ main() {
                 fi
             fi
         else
+            check_nebius_cli
             echo "$now" > "$STATE_FILE"
             log "INFO" "Started idle tracking at $(date -d "@$now" '+%Y-%m-%d %H:%M:%S')"
         fi
