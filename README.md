@@ -19,7 +19,7 @@ Cost Guard monitors your Nebius VM's CPU and GPU usage via cron and automaticall
 
 The VM counts as idle only when both CPU and GPU are idle. CPU-only VMs behave as before.
 
-- `nvidia-smi` is sampled `GPU_SAMPLES` times (default 5), `GPU_SAMPLE_INTERVAL` seconds apart (default 2). The maximum utilization over all samples and all GPUs is used; the GPU is idle if it is below `GPU_THRESHOLD` (default 5%).
+- `nvidia-smi` is sampled `GPU_SAMPLES` times (default 5), `GPU_SAMPLE_INTERVAL` seconds apart (default 2). The maximum utilization over all samples and all GPUs is used; the GPU is idle if it is below `GPU_THRESHOLD` (default 5%). `GPU_SAMPLE_INTERVAL` x (`GPU_SAMPLES` - 1) may not exceed 120 seconds; larger values count as invalid settings (a failed GPU check).
 - A busy GPU resets the idle timer. A failed check (`nvidia-smi` error, timeout, unparsable output, or invalid GPU settings) counts as active, logs an error, and also resets the timer. A failed check never causes a shutdown.
 - `GPU_MONITORING`: `auto` (default) checks the GPU if `nvidia-smi` exists or the NVIDIA driver is loaded (if `nvidia-smi` is then missing, that is an error and the VM keeps running); `on` always checks it, and a missing `nvidia-smi` is an error that keeps the VM running; `off` ignores the GPU. Any other value acts like `on`.
 - Memory option: set `GPU_MEMORY_THRESHOLD_MB` above 0 to give a GPU that is idle but holds at least that much memory (for example, a loaded model) a longer limit, `GPU_MEM_IDLE_THRESHOLD_SECONDS` (default 3600). The longer limit is never shorter than `IDLE_THRESHOLD_SECONDS`, is decided on each check, and memory never blocks shutdown forever.
@@ -27,6 +27,7 @@ The VM counts as idle only when both CPU and GPU are idle. CPU-only VMs behave a
 Limits:
 - NVIDIA GPUs only.
 - GPUs that report `[N/A]` for utilization or memory (for example, some MIG or vGPU setups) are treated as active, so the VM is never stopped. Use `GPU_MONITORING="off"` if you want CPU-only detection there.
+- Developed and tested on single-GPU machines. On a multi-GPU VM the highest utilization across all GPUs is used, but a GPU that is missing from the `nvidia-smi` output (for example during a driver reset) is not detected, so its work could be missed.
 - Sampling covers about 8 seconds of each 5-minute check, so bursty GPU workloads (for example, inference with long gaps) can be missed. Tune the thresholds for your workload.
 - `auto` falls back to CPU-only only when `nvidia-smi` is missing and no NVIDIA driver is loaded (`/proc/driver/nvidia` absent), such as a VM without a GPU or without the driver installed.
 
