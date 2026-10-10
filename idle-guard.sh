@@ -76,14 +76,20 @@ gpu_monitoring_enabled() {
     esac
 }
 
-# Returns non-zero if any GPU setting is not numeric. Integers are capped at
-# 9 digits so 10# arithmetic cannot overflow.
+# Longest time one check may spend waiting between GPU samples. Longer runs would overlap
+# the next cron run.
+GPU_MAX_SAMPLING_SECONDS=120
+
+# Returns non-zero if any GPU setting is not numeric or the samples would take too long.
+# Integers are capped at 9 digits so 10# arithmetic cannot overflow.
 gpu_settings_valid() {
     [[ "$GPU_SAMPLES" =~ ^[1-9][0-9]{0,8}$ ]] &&
         [[ "$GPU_SAMPLE_INTERVAL" =~ ^[0-9]+(\.[0-9]+)?$ ]] &&
         [[ "$GPU_THRESHOLD" =~ ^[0-9]{1,9}$ ]] &&
         [[ "$GPU_MEMORY_THRESHOLD_MB" =~ ^[0-9]{1,9}$ ]] &&
-        [[ "$GPU_MEM_IDLE_THRESHOLD_SECONDS" =~ ^[0-9]{1,9}$ ]]
+        [[ "$GPU_MEM_IDLE_THRESHOLD_SECONDS" =~ ^[0-9]{1,9}$ ]] &&
+        awk -v i="$GPU_SAMPLE_INTERVAL" -v n="$GPU_SAMPLES" -v max="$GPU_MAX_SAMPLING_SECONDS" \
+            'BEGIN { exit !(i * (n - 1) <= max) }'
 }
 
 # Exits non-zero if a core setting is not a plain integer (capped at 9 digits so
@@ -293,7 +299,7 @@ main() {
         fi
     else
         if [[ -f "$STATE_FILE" ]]; then
-            log "INFO" "CPU or GPU above threshold. Resetting idle timer."
+            log "INFO" "CPU or GPU busy, or GPU check failed. Resetting idle timer."
             rm -f "$STATE_FILE"
         else
             log "INFO" "System is active."
