@@ -533,3 +533,26 @@ EOT
     [ "$status" -eq 0 ]
     assert_stopped
 }
+
+@test "total sampling time over 120s: treated as failed GPU check, does not stop" {
+    write_config 'GPU_SAMPLES=3' 'GPU_SAMPLE_INTERVAL=61'
+    set_gpu "0, 10"
+    run_guard
+    [ "$status" -eq 0 ]
+    assert_not_stopped
+    grep -q "Invalid GPU settings" "$TEST_DIR/log"
+}
+
+@test "single sample ignores the interval: large interval is fine" {
+    write_config 'GPU_SAMPLES=1' 'GPU_SAMPLE_INTERVAL=1000'
+    set_gpu "0, 10"
+    run_guard
+    [ "$status" -eq 0 ]
+    assert_stopped
+}
+
+@test "failed GPU check logs that the VM is treated as busy" {
+    touch "$TEST_DIR/gpu_fail"
+    run_guard
+    grep -q "GPU check failed" "$TEST_DIR/log"
+}
