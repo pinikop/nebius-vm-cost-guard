@@ -196,7 +196,21 @@ get_uptime_seconds() {
     awk '{print int($1)}' /proc/uptime
 }
 
+# Allow only one check at a time. Cron starts a new run every interval even if the previous
+# one is still going (hung nvidia-smi or CLI, a slow stop command, or a manual run), and
+# overlapping runs could race on the state file or send duplicate stop commands.
+# Without flock the script runs unlocked, as before.
+acquire_lock() {
+    command -v flock > /dev/null || return 0
+    exec 9> "$STATE_DIR/lock"
+    flock -n 9
+}
+
 main() {
+    if ! acquire_lock; then
+        log "INFO" "Previous run still active. Skipping."
+        exit 0
+    fi
     rm -f "$ERROR_FILE"
     log "INFO" "--- Cost Guard check starting ---"
     IDLE_LIMIT=$IDLE_THRESHOLD_SECONDS
