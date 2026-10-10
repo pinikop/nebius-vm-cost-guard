@@ -107,6 +107,7 @@ assert_not_stopped() {
 @test "multi-GPU with one busy: does not stop VM" {
     set_gpu "0, 10\n80, 9000"
     run_guard
+    [ "$status" -eq 0 ]
     assert_not_stopped
 }
 
@@ -149,6 +150,7 @@ assert_not_stopped() {
     write_config 'CPU_THRESHOLD=0'
     set_gpu "0, 10"
     run_guard
+    [ "$status" -eq 0 ]
     assert_not_stopped
 }
 
@@ -156,5 +158,46 @@ assert_not_stopped() {
     write_config 'GPU_MONITORING="bogus"'
     set_gpu "99, 9000"
     run_guard
+    [ "$status" -eq 0 ]
     assert_not_stopped
+}
+
+@test "leading-zero GPU util 08: does not stop VM" {
+    set_gpu "08, 10"
+    run_guard
+    [ "$status" -eq 0 ]
+    assert_not_stopped
+}
+
+@test "leading-zero GPU util 09: does not stop VM" {
+    set_gpu "09, 10"
+    run_guard
+    [ "$status" -eq 0 ]
+    assert_not_stopped
+}
+
+@test "overflowing GPU util: does not stop VM" {
+    set_gpu "18446744073709551616, 10"
+    run_guard
+    [ "$status" -eq 0 ]
+    assert_not_stopped
+    grep -q "ERROR" "$TEST_DIR/log"
+}
+
+@test "non-numeric GPU_SAMPLE_INTERVAL: does not stop VM" {
+    write_config 'GPU_SAMPLE_INTERVAL="abc"'
+    set_gpu "0, 10"
+    run_guard
+    [ "$status" -eq 0 ]
+    assert_not_stopped
+    grep -q "ERROR" "$TEST_DIR/log"
+}
+
+@test "non-numeric GPU_THRESHOLD: does not stop VM" {
+    write_config 'GPU_THRESHOLD="abc"'
+    set_gpu "0, 10"
+    run_guard
+    [ "$status" -eq 0 ]
+    assert_not_stopped
+    grep -q "ERROR" "$TEST_DIR/log"
 }

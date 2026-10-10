@@ -57,20 +57,36 @@ gpu_monitoring_enabled() {
     esac
 }
 
+# Returns non-zero if any GPU setting is not numeric.
+gpu_settings_valid() {
+    [[ "$GPU_SAMPLES" =~ ^[1-9][0-9]*$ ]] &&
+        [[ "$GPU_SAMPLE_INTERVAL" =~ ^[0-9]+(\.[0-9]+)?$ ]] &&
+        [[ "$GPU_THRESHOLD" =~ ^[0-9]+$ ]]
+}
+
 # Sample all GPUs GPU_SAMPLES times. Prints "<max_util_pct> <max_mem_mb>".
-# Returns non-zero on any nvidia-smi failure or unparsable output.
+# Logs the reason and returns non-zero on any nvidia-smi failure or unparsable output.
 get_gpu_usage() {
-    [[ "$GPU_SAMPLES" =~ ^[1-9][0-9]*$ ]] || return 1
     local max_util=0 max_mem=0 sample out util mem
     for ((sample = 1; sample <= GPU_SAMPLES; sample++)); do
-        out=$(timeout 10 "$NVIDIA_SMI" \
+        out=$(timeout -k 5 10 "$NVIDIA_SMI" \
             --query-gpu=utilization.gpu,memory.used \
-            --format=csv,noheader,nounits 2>/dev/null) || return 1
-        [[ -n "$out" ]] || return 1
+            --format=csv,noheader,nounits 2>/dev/null) || {
+            log "ERROR" "nvidia-smi failed or timed out. Treating GPU as active."
+            return 1
+        }
+        [[ -n "$out" ]] || {
+            log "ERROR" "Empty nvidia-smi output. Treating GPU as active."
+            return 1
+        }
         while IFS=', ' read -r util mem; do
-            [[ "$util" =~ ^[0-9]+$ && "$mem" =~ ^[0-9]+$ ]] || return 1
-            if ((util > max_util)); then max_util=$util; fi
-            if ((mem > max_mem)); then max_mem=$mem; fi
+            # 10# avoids octal parsing of values like 08
+            if [[ ! "$util" =~ ^[0-9]{1,3}$ || ! "$mem" =~ ^[0-9]{1,9}$ ]]; then
+                log "ERROR" "Unparsable nvidia-smi output. Treating GPU as active."
+                return 1
+            fi
+            if ((10#$util > max_util)); then max_util=$((10#$util)); fi
+            if ((10#$mem > max_mem)); then max_mem=$((10#$mem)); fi
         done <<< "$out"
         if ((sample < GPU_SAMPLES)); then sleep "$GPU_SAMPLE_INTERVAL"; fi
     done
@@ -81,14 +97,18 @@ get_gpu_usage() {
 # Sets GPU_SUMMARY for the log line.
 is_gpu_idle() {
     local usage util mem
+    if ! gpu_settings_valid; then
+        GPU_SUMMARY="check failed, treated as active"
+        log "ERROR" "Invalid GPU settings. Treating GPU as active."
+        return 1
+    fi
     if ! usage=$(get_gpu_usage); then
         GPU_SUMMARY="check failed, treated as active"
-        log "ERROR" "GPU check failed. Treating GPU as active."
         return 1
     fi
     read -r util mem <<< "$usage"
     GPU_SUMMARY="${util}% (max of ${GPU_SAMPLES} samples, Threshold: ${GPU_THRESHOLD}%, memory: ${mem}MB)"
-    ((util < GPU_THRESHOLD))
+    ((util < 10#$GPU_THRESHOLD))
 }
 
 # Log an error if the Nebius CLI is missing, a warning if its version differs from the tested one
